@@ -41,6 +41,7 @@ local init = function()
               col = pos.range[2] + 1,
               text = error.message,
               type = result.status == "failed" and "E" or "W",
+              stack_trace = error.stack_trace,
             }
           end
         end
@@ -64,6 +65,8 @@ local init = function()
       return a.filename < b.filename
     end)
 
+    local qf_results = expand_multilines(expand_stack_traces(qf_results))
+
     nio.fn.setqflist(qf_results)
     if #qf_results > 0 then
       if config.quickfix.open then
@@ -75,6 +78,61 @@ local init = function()
       end
     end
   end
+end
+
+function expand_multilines(test_results)
+  local qf_results = {}
+
+  for _, result in ipairs(test_results) do
+    local first = true
+
+    for line in result.text:gmatch("([^\n]+)") do
+      if first then
+        qf_results[#qf_results + 1] = {
+          bufnr = result.bufnr,
+          filename = result.filename,
+          lnum = result.lnum,
+          col = result.col,
+          text = line,
+          type = result.type,
+        }
+        first = false
+      else
+        qf_results[#qf_results + 1] = {
+          text = line,
+          type = result.type,
+        }
+      end
+    end
+  end
+
+  return qf_results
+end
+
+function expand_stack_traces(test_results)
+  local qf_results = {}
+
+  for _, result in ipairs(test_results) do
+    local stack_trace = result.stack_trace
+    result.stack_trace = nil
+
+    qf_results[#qf_results + 1] = result
+
+    if stack_trace then
+      for stack_trace_entry_id, stack_trace_entry in pairs(stack_trace) do
+        qf_results[#qf_results + 1] = {
+          filename = stack_trace_entry.filename,
+          lnum = stack_trace_entry.line,
+          col = stack_trace_entry.column,
+          module = stack_trace_entry.module,
+          text = stack_trace_entry.text,
+          type = result.type,
+        }
+      end
+    end
+  end
+
+  return qf_results
 end
 
 neotest.quickfix = setmetatable(neotest.quickfix, {
